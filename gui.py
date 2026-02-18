@@ -12,6 +12,7 @@ from .excel import export_xlsx
 from .jp_holidays import jp_holidays_in_month
 from .solver import SolveError, solve
 from .template_excel import export_template_xlsx, import_from_template_xlsx
+from .app_paths import app_base_dir
 
 
 def _parse_date(s: str) -> date:
@@ -21,6 +22,22 @@ def _parse_date(s: str) -> date:
 
 def _weekday_jp(d: date) -> str:
     return "月火水木金土日"[d.weekday()]
+
+
+# Palette (keep it simple, cross-platform friendly).
+COL_BG = "#FFF7ED"  # warm paper
+COL_PANEL = "#FFFFFF"
+COL_TEXT = "#111827"
+COL_MUTED = "#6B7280"
+COL_ACCENT = "#0EA5E9"  # sky
+COL_ACCENT_DARK = "#0369A1"
+
+COL_SUN = "#FCE7F3"  # pink
+COL_SAT = "#E0F2FE"  # light sky
+COL_HOLIDAY = "#FFE4E6"  # rose
+COL_CLOSED = "#FEE2E2"  # red-ish
+COL_REQUEST_OFF = "#DBEAFE"  # blue
+COL_TODAY = "#DCFCE7"  # green
 
 
 @dataclass
@@ -49,18 +66,82 @@ class App(tk.Tk):
 
         self.state = UiState()
         self._jp_holidays: dict[date, str] = {}
+        self._apply_style()
         self._build_ui()
+
+    def _apply_style(self):
+        self.configure(bg=COL_BG)
+
+        style = ttk.Style()
+        # "clam" tends to respect custom colors on Windows/macOS.
+        try:
+            style.theme_use("clam")
+        except Exception:
+            pass
+
+        default_font = ("Segoe UI", 10)
+        title_font = ("Segoe UI", 12, "bold")
+
+        style.configure("TFrame", background=COL_BG)
+        style.configure("TLabel", background=COL_BG, foreground=COL_TEXT, font=default_font)
+        style.configure(
+            "Title.TLabel",
+            background=COL_BG,
+            foreground=COL_ACCENT_DARK,
+            font=title_font,
+        )
+        style.configure(
+            "TButton",
+            background=COL_ACCENT,
+            foreground="white",
+            font=default_font,
+            padding=(10, 6),
+        )
+        style.map("TButton", background=[("active", COL_ACCENT_DARK)])
+
+        style.configure(
+            "TLabelframe",
+            background=COL_PANEL,
+            bordercolor="#FED7AA",
+            relief="solid",
+            padding=10,
+        )
+        style.configure(
+            "TLabelframe.Label",
+            background=COL_PANEL,
+            foreground=COL_TEXT,
+            font=("Segoe UI", 10, "bold"),
+        )
+
+        style.configure(
+            "Treeview",
+            background=COL_PANEL,
+            fieldbackground=COL_PANEL,
+            foreground=COL_TEXT,
+            rowheight=28,
+            bordercolor="#FED7AA",
+        )
+        style.configure(
+            "Treeview.Heading",
+            background=COL_ACCENT_DARK,
+            foreground="white",
+            font=("Segoe UI", 10, "bold"),
+            relief="flat",
+        )
+        style.map("Treeview.Heading", background=[("active", COL_ACCENT)])
 
     def _build_ui(self):
         top = ttk.Frame(self)
         top.pack(fill="x", padx=10, pady=10)
+
+        ttk.Label(top, text="shiftgen", style="Title.TLabel").pack(side="left", padx=(0, 12))
 
         ttk.Label(top, text="対象月 (YYYY-MM)").pack(side="left")
         self.month_var = tk.StringVar(value=self.state.month)
         ttk.Entry(top, textvariable=self.month_var, width=10).pack(side="left", padx=8)
         ttk.Button(top, text="カレンダー更新", command=self._rebuild_calendar).pack(side="left")
 
-        ttk.Button(top, text="サンプル読込", command=self._load_sample).pack(side="left", padx=8)
+        ttk.Button(top, text="スタッフ読込", command=self._load_staff_master).pack(side="left", padx=8)
         ttk.Button(top, text="JSON読込", command=self._load_json).pack(side="left", padx=8)
         ttk.Button(top, text="JSON保存", command=self._save_json).pack(side="left", padx=8)
         ttk.Button(top, text="テンプレ読込(Excel)", command=self._load_template).pack(side="left", padx=8)
@@ -133,7 +214,28 @@ class App(tk.Tk):
 
         self.cal_frame = ttk.Frame(box)
         self.cal_frame.pack(fill="both", expand=True, padx=8, pady=6)
+
+        legend = ttk.Frame(box)
+        legend.pack(fill="x", padx=8, pady=(0, 6))
+        self._legend_chip(legend, COL_REQUEST_OFF, "希望休")
+        self._legend_chip(legend, COL_CLOSED, "臨時休業")
+        self._legend_chip(legend, COL_HOLIDAY, "祝日(自動)")
+        self._legend_chip(legend, COL_SAT, "土曜")
+        self._legend_chip(legend, COL_SUN, "日曜(休)")
+        self._legend_chip(legend, COL_TODAY, "今日")
+
         self._rebuild_calendar()
+
+    def _legend_chip(self, parent: ttk.Frame, color: str, text: str):
+        chip = tk.Label(
+            parent,
+            text=f" {text} ",
+            bg=color,
+            fg=COL_TEXT,
+            font=("Segoe UI", 9, "bold"),
+            bd=0,
+        )
+        chip.pack(side="left", padx=(0, 6))
 
     def _build_preview_panel(self, parent: ttk.Frame):
         box = ttk.Labelframe(parent, text="生成結果プレビュー")
@@ -173,16 +275,25 @@ class App(tk.Tk):
             jp_holidays_in_month(self.state.month) if self.state.auto_close_jp_holidays else {}
         )
 
-        # Header row
-        for i, w in enumerate(["月", "火", "水", "木", "金", "土", "日"]):
+        # Header row (Sunday-first)
+        for i, w in enumerate(["日", "月", "火", "水", "木", "金", "土"]):
             ttk.Label(self.cal_frame, text=w).grid(row=0, column=i, padx=2, pady=2)
 
-        # Align to Monday=0
+        # Align to Sunday=0
         r = 1
-        c = start.weekday()
+        c = (start.weekday() + 1) % 7
 
         for d in iter_dates(start, end):
-            btn = tk.Button(self.cal_frame, text=str(d.day), width=4)
+            btn = tk.Button(
+                self.cal_frame,
+                text=str(d.day),
+                width=4,
+                relief="flat",
+                bd=0,
+                highlightthickness=0,
+                activebackground=COL_ACCENT,
+                activeforeground="white",
+            )
             btn.grid(row=r, column=c, padx=2, pady=2)
             btn.configure(command=lambda dd=d: self._on_day_click(dd))
             self._style_day_button(btn, d)
@@ -193,33 +304,40 @@ class App(tk.Tk):
                 r += 1
 
     def _style_day_button(self, btn: tk.Button, d: date):
+        # Today highlight (still overridden by closed/request markers below)
+        try:
+            if d == date.today():
+                btn.configure(bg=COL_TODAY, fg=COL_TEXT)
+        except Exception:
+            pass
+
         # Sunday is always closed (informational styling)
         if d.weekday() == 6:
-            btn.configure(bg="#e5e7eb", fg="#6b7280")
+            btn.configure(bg=COL_SUN, fg="#9D174D")
             return
 
         # Japan holiday (auto close)
         if d in self._jp_holidays:
-            btn.configure(bg="#ffe4e6", fg="#991b1b")
+            btn.configure(bg=COL_HOLIDAY, fg="#991B1B")
             return
 
         # Closed date (holiday etc.)
         if d in self.state.closed_dates:
-            btn.configure(bg="#fee2e2")  # light red
+            btn.configure(bg=COL_CLOSED, fg=COL_TEXT)
             return
 
         # Requested off for selected staff
         sid = self._selected_staff_id()
         if sid and d in self.state.requests_off.get(sid, set()):
-            btn.configure(bg="#dbeafe")  # light blue
+            btn.configure(bg=COL_REQUEST_OFF, fg=COL_TEXT)
             return
 
         # Saturday highlight
         if d.weekday() == 5:
-            btn.configure(bg="#fef3c7")  # light amber
+            btn.configure(bg=COL_SAT, fg=COL_TEXT)
             return
 
-        btn.configure(bg="SystemButtonFace")
+        btn.configure(bg=COL_PANEL, fg=COL_TEXT)
 
     def _selected_staff_id(self) -> str | None:
         sel = self.staff_list.curselection()
@@ -303,15 +421,51 @@ class App(tk.Tk):
             lim = "LIMIT" if s.allowed_kinds else "-"
             self.staff_list.insert("end", f"{s.id} | {s.name} | {tag} | {lim}")
 
-    def _load_sample(self):
-        path = "sample_config.json"
+    def _load_staff_master(self):
+        """
+        One-click load staff master data from `staff_master.json` located next to:
+        - exe (PyInstaller)
+        - project root (source run)
+        """
+        path = app_base_dir() / "staff_master.json"
         try:
             with open(path, "r", encoding="utf-8") as f:
                 raw = json.load(f)
         except FileNotFoundError:
-            messagebox.showerror("読込エラー", f"{path} が見つかりません。")
+            messagebox.showerror(
+                "読込エラー",
+                f"staff_master.json が見つかりません。\n\n場所: {path}",
+            )
             return
-        self._load_from_raw(raw)
+        except Exception as e:
+            messagebox.showerror("読込エラー", str(e))
+            return
+
+        staff_raw = raw.get("staff")
+        if not isinstance(staff_raw, list) or not staff_raw:
+            messagebox.showerror("読込エラー", "staff_master.json の staff が不正です。")
+            return
+
+        # Only update staff-related state; keep month/requests_off/closed as-is.
+        self.state.staff = [
+            Staff(
+                id=s["id"],
+                name=s["name"],
+                is_manager=bool(s.get("is_manager", False)),
+                allowed_kinds=tuple(s["allowed_kinds"]) if s.get("allowed_kinds") else None,
+            )
+            for s in staff_raw
+        ]
+
+        valid_ids = {s.id for s in self.state.staff}
+        # Drop requests for removed staff
+        self.state.requests_off = {
+            sid: ds for sid, ds in self.state.requests_off.items() if sid in valid_ids
+        }
+
+        self._refresh_staff_list()
+        self._rebuild_calendar()
+        self.status_var.set("スタッフを読み込みました。")
 
     def _load_json(self):
         path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
@@ -437,9 +591,13 @@ class App(tk.Tk):
         self._assignments = res.assignments
         self.preview.delete(*self.preview.get_children())
         staff_by_id = mi.staff_by_id()
-        for a in res.assignments:
+        for idx, a in enumerate(res.assignments):
             d = a.day
             kind = "土曜" if d.weekday() == 5 else "平日"
+            tags = []
+            tags.append("odd" if idx % 2 else "even")
+            if d.weekday() == 5:
+                tags.append("sat")
             self.preview.insert(
                 "",
                 "end",
@@ -452,8 +610,14 @@ class App(tk.Tk):
                         for slot_name in SLOT_ORDER
                     ],
                 ),
+                tags=tuple(tags),
             )
         self.status_var.set(f"生成完了: {len(res.assignments)}日")
+
+        # Pop-ish row striping
+        self.preview.tag_configure("even", background="#FFFFFF")
+        self.preview.tag_configure("odd", background="#FFFBEB")
+        self.preview.tag_configure("sat", background="#E0F2FE")
 
     def _export(self):
         if not self._assignments:
