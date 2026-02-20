@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import argparse
 
-from .excel import export_xlsx
-from .io import load_month_input_json
-from .solver import solve
-from .template_excel import import_from_template_xlsx
+from excel import export_xlsx
+from io import load_month_input_json
+from solver import solve
+from template_excel import import_from_template_xlsx
 
 
 def main(argv: list[str] | None = None) -> int:

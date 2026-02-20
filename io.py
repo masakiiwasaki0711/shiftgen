@@ -4,7 +4,7 @@ import json
 from dataclasses import asdict
 from datetime import date
 
-from .domain import MonthInput, Requirements, Staff
+from domain import MonthInput, Requirements, Staff
 
 
 def _parse_date(d: str) -> date:

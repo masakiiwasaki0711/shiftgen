@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from .domain import MonthInput, Requirements, Staff
-from .calendar_utils import month_range
+from domain import MonthInput, Requirements, Staff
+from calendar_utils import month_range
 
 
 def _parse_date(s: str) -> date:

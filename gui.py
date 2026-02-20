@@ -6,13 +6,13 @@ from dataclasses import dataclass
 from datetime import date
 from tkinter import filedialog, messagebox, ttk
 
-from .calendar_utils import iter_dates, month_range
-from .domain import KIND_SAT_B, KIND_WD_A, MonthInput, Requirements, SLOT_LABEL_JA, SLOT_ORDER, Staff
-from .excel import export_xlsx
-from .jp_holidays import jp_holidays_in_month
-from .solver import SolveError, solve
-from .template_excel import export_template_xlsx, import_from_template_xlsx
-from .app_paths import app_base_dir
+from calendar_utils import iter_dates, month_range
+from domain import KIND_SAT_B, KIND_WD_A, MonthInput, Requirements, SLOT_LABEL_JA, SLOT_ORDER, Staff
+from excel import export_xlsx
+from jp_holidays import jp_holidays_in_month
+from solver import SolveError, solve
+from template_excel import export_template_xlsx, import_from_template_xlsx
+from app_paths import app_base_dir
 
 
 def _parse_date(s: str) -> date:

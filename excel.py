@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from .domain import Assignment, MonthInput
-from .domain import SLOT_LABEL_JA, SLOT_ORDER
+from domain import Assignment, MonthInput
+from domain import SLOT_LABEL_JA, SLOT_ORDER
 
 
 def export_xlsx(mi: MonthInput, assignments: tuple[Assignment, ...], out_path: str) -> None:

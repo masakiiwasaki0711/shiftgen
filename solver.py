@@ -3,9 +3,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
-from .calendar_utils import is_saturday, is_sunday, iter_dates, month_range
-from .domain import Assignment, MonthInput, SLOT_TO_KIND
-from .jp_holidays import jp_holidays_in_month
+from calendar_utils import is_saturday, is_sunday, iter_dates, month_range
+from domain import Assignment, MonthInput, SLOT_TO_KIND
+from jp_holidays import jp_holidays_in_month
 
 
 class SolveError(RuntimeError):
