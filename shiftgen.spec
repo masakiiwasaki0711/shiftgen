@@ -1,6 +1,10 @@
 # PyInstaller spec to reliably bundle native deps like ortools.
 
+from pathlib import Path
+
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+project_root = Path(__file__).resolve().parent
 
 hiddenimports = []
 datas = []
@@ -13,14 +17,17 @@ for pkg in ("ortools", "openpyxl", "jpholiday"):
         binaries += b
         hiddenimports += h
     except Exception:
-        # If package isn't installed in the build env, PyInstaller will fail later anyway.
         pass
 
+# ortools often uses dynamic imports and native binaries.
 hiddenimports += collect_submodules("ortools")
+
+# Ensure our package is always bundled.
+hiddenimports += collect_submodules("shiftgen")
 
 a = Analysis(
     ["app.py"],
-    pathex=[],
+    pathex=[str(project_root)],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
@@ -46,4 +53,3 @@ exe = EXE(
     upx=True,
     console=False,  # windowed
 )
-

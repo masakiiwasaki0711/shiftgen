@@ -21,8 +21,7 @@ def _show_fatal_error(title: str, body: str) -> None:
 
 def main() -> int:
     try:
-        from gui import run_app
-
+        from shiftgen.gui import run_app
         run_app()
         return 0
     except Exception:
