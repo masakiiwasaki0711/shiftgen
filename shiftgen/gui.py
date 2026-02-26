@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 import tkinter as tk
 from dataclasses import dataclass
 from datetime import date
@@ -120,7 +121,8 @@ class App(tk.Tk):
 
         bottom = ttk.Frame(self)
         bottom.pack(fill="x", padx=10, pady=10)
-        ttk.Button(bottom, text="生成", command=self._generate).pack(side="left")
+        self.gen_btn = ttk.Button(bottom, text="生成", command=self._generate)
+        self.gen_btn.pack(side="left")
         ttk.Button(bottom, text="Excel出力", command=self._export).pack(side="left", padx=10)
         self.status_var = tk.StringVar(value="入力して「生成」を押してください。")
         ttk.Label(bottom, textvariable=self.status_var).pack(side="left", padx=10)
@@ -495,9 +497,27 @@ class App(tk.Tk):
     def _generate(self):
         try:
             mi = self._make_month_input()
-            res = solve(mi)
-        except (ValueError, SolveError) as e:
+        except ValueError as e:
             messagebox.showerror("生成エラー", str(e))
+            return
+
+        self.gen_btn.configure(state="disabled")
+        self.status_var.set("生成中...")
+
+        def run():
+            try:
+                res = solve(mi)
+                self.after(0, lambda: self._on_generate_done(mi, res, None))
+            except SolveError as e:
+                self.after(0, lambda err=e: self._on_generate_done(mi, None, err))
+
+        threading.Thread(target=run, daemon=True).start()
+
+    def _on_generate_done(self, mi: MonthInput, res, error: SolveError | None):
+        self.gen_btn.configure(state="normal")
+        if error is not None:
+            messagebox.showerror("生成エラー", str(error))
+            self.status_var.set("生成に失敗しました。")
             return
 
         self._assignments = res.assignments
@@ -523,7 +543,19 @@ class App(tk.Tk):
         self.preview.tag_configure("even", background="#FFFFFF")
         self.preview.tag_configure("odd", background="#FFFBEB")
         self.preview.tag_configure("sat", background=COL_SAT)
-        self.status_var.set(f"生成完了: {len(res.assignments)}日")
+        if res.is_partial:
+            self.status_var.set(
+                f"生成完了(制約緩和): {len(res.assignments)}日"
+                " ※土曜上限やマネージャー配置を一部緩和しました。空きスロットは手動で調整してください。"
+            )
+            messagebox.showwarning(
+                "制約緩和モードで生成",
+                "土曜出勤上限またはマネージャー配置の条件を満たせなかったため、\n"
+                "制約を緩和してシフト表を生成しました。\n\n"
+                "空きになっているスロットは手動で調整してください。",
+            )
+        else:
+            self.status_var.set(f"生成完了: {len(res.assignments)}日")
 
     def _export(self):
         if not self._assignments:

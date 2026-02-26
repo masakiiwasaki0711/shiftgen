@@ -12,9 +12,15 @@ class SolveError(RuntimeError):
     pass
 
 
+class _InfeasibleError(Exception):
+    """厳格制約で解なしのとき内部的に送出し、緩和モードへの切り替えに使う。"""
+    pass
+
+
 @dataclass(frozen=True)
 class SolveResult:
     assignments: tuple[Assignment, ...]
+    is_partial: bool = False  # True のとき制約緩和モードで生成（空きスロットあり）
 
 
 def _open_days(mi: MonthInput) -> list[date]:
@@ -35,15 +41,19 @@ def _open_days(mi: MonthInput) -> list[date]:
 
 
 def solve(mi: MonthInput) -> SolveResult:
+    """まず厳格制約で解を求め、不可能なら制約緩和モードで再挑戦する。"""
     try:
-        return _solve_with_ortools(mi)
+        try:
+            return _solve_with_ortools(mi, relaxed=False)
+        except _InfeasibleError:
+            return _solve_with_ortools(mi, relaxed=True)
     except ModuleNotFoundError as e:
         raise SolveError(
             "ortools が見つかりません。`pip install -r requirements.txt` を実行してください。"
         ) from e
 
 
-def _solve_with_ortools(mi: MonthInput) -> SolveResult:
+def _solve_with_ortools(mi: MonthInput, relaxed: bool = False) -> SolveResult:
     from ortools.sat.python import cp_model
 
     staff = list(mi.staff)
@@ -96,9 +106,13 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
             slot_optional[key] = is_opt
             day_to_slots[di].append(slot_name)
 
+    # 緩和モードでは必須スロットも任意（空き可）にする
     active: dict[tuple[int, str], cp_model.IntVar] = {}
     for key in slot_keys:
-        active[key] = model.NewBoolVar(f"active_d{key[0]}_{key[1]}") if slot_optional[key] else model.NewConstant(1)
+        if slot_optional[key] or relaxed:
+            active[key] = model.NewBoolVar(f"active_d{key[0]}_{key[1]}")
+        else:
+            active[key] = model.NewConstant(1)
 
     x: dict[tuple[int, int, str], cp_model.IntVar] = {}
     for p in range(len(staff)):
@@ -112,6 +126,7 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
         for di in range(len(days)):
             model.Add(sum(x[(p, di, slot_name)] for slot_name in day_to_slots[di]) <= 1)
 
+    # 希望休・種別制限は緩和モードでも常にハード制約
     for sid, offs in mi.requests_off.items():
         if sid not in staff_index:
             raise SolveError(f"requests_off に未知の staff id があります: {sid}")
@@ -133,20 +148,38 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
             if kind not in allowed:
                 model.Add(x[(p, di, slot_name)] == 0)
 
+    # 土曜出勤上限
+    sat_excess_vars: list[cp_model.IntVar] = []
     for p in range(len(staff)):
         sat_work = []
         for di, d in enumerate(days):
             if is_saturday(d):
                 sat_work.append(sum(x[(p, di, slot_name)] for slot_name in day_to_slots[di]))
-        if sat_work:
+        if not sat_work:
+            continue
+        if relaxed:
+            # ソフト制約: 超過分をペナルティ変数で捕捉
+            excess = model.NewIntVar(0, len(sat_work), f"sat_excess_p{p}")
+            model.Add(sum(sat_work) - req.saturday_max_per_person <= excess)
+            sat_excess_vars.append(excess)
+        else:
             model.Add(sum(sat_work) <= req.saturday_max_per_person)
 
+    # マネージャー1日1人以上
+    no_manager_vars: list[cp_model.IntVar] = []
     for di in range(len(days)):
         manager_work = []
         for p, s in enumerate(staff):
             if s.id in managers:
                 manager_work.append(sum(x[(p, di, slot_name)] for slot_name in day_to_slots[di]))
-        model.Add(sum(manager_work) >= 1)
+        if relaxed:
+            # ソフト制約: マネージャー不在日をペナルティ変数で捕捉
+            no_mgr = model.NewBoolVar(f"no_mgr_d{di}")
+            model.Add(sum(manager_work) == 0).OnlyEnforceIf(no_mgr)
+            model.Add(sum(manager_work) >= 1).OnlyEnforceIf(no_mgr.Not())
+            no_manager_vars.append(no_mgr)
+        else:
+            model.Add(sum(manager_work) >= 1)
 
     optional_keys = [k for k in slot_keys if slot_optional[k]]
     max_optional = len(optional_keys)
@@ -173,12 +206,36 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
         model.AddAbsEquality(diff, v - avg)
         diffs.append(diff)
 
-    objective = (max_total - min_total) * 1000 + sum(diffs)
-    if req.prefer_max_headcount and max_optional:
-        filled_optional = sum(active[k] for k in optional_keys)
-        unfilled = model.NewIntVar(0, max_optional, "unfilled_optional")
-        model.Add(unfilled == max_optional - filled_optional)
-        objective = unfilled * 1_000_000 + objective
+    imbalance_obj = (max_total - min_total) * 1000 + sum(diffs)
+
+    if relaxed:
+        # 優先度(高→低):
+        # 1. 必須スロットをなるべく埋める (1000万/未充填スロット)
+        # 2. マネージャーが不在の日を減らす (100万/日)
+        # 3. 土曜上限超過を減らす (1万/人-土曜)
+        # 4. 勤務日数の均等化
+        mandatory_keys = [k for k in slot_keys if not slot_optional[k]]
+        unfilled_mandatory = model.NewIntVar(0, len(mandatory_keys), "unfilled_mandatory")
+        model.Add(unfilled_mandatory == len(mandatory_keys) - sum(active[k] for k in mandatory_keys))
+
+        objective = (
+            unfilled_mandatory * 10_000_000
+            + sum(no_manager_vars) * 1_000_000
+            + sum(sat_excess_vars) * 10_000
+            + imbalance_obj
+        )
+        if req.prefer_max_headcount and max_optional:
+            filled_optional = sum(active[k] for k in optional_keys)
+            unfilled_opt = model.NewIntVar(0, max_optional, "unfilled_optional")
+            model.Add(unfilled_opt == max_optional - filled_optional)
+            objective = objective + unfilled_opt * 1_000
+    else:
+        objective = imbalance_obj
+        if req.prefer_max_headcount and max_optional:
+            filled_optional = sum(active[k] for k in optional_keys)
+            unfilled = model.NewIntVar(0, max_optional, "unfilled_optional")
+            model.Add(unfilled == max_optional - filled_optional)
+            objective = unfilled * 1_000_000 + objective
 
     model.Minimize(objective)
 
@@ -188,7 +245,9 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
 
     status = solver.Solve(model)
     if status not in (cp_model.OPTIMAL, cp_model.FEASIBLE):
-        raise SolveError("条件を満たすシフトを作れませんでした。希望休や土曜上限を見直してください。")
+        if relaxed:
+            raise SolveError("制約を緩和しても解が見つかりませんでした。スタッフ数や希望休設定を見直してください。")
+        raise _InfeasibleError()
 
     assignments: list[Assignment] = []
     for di, d in enumerate(days):
@@ -202,9 +261,10 @@ def _solve_with_ortools(mi: MonthInput) -> SolveResult:
                     chosen = staff[p].id
                     break
             if chosen is None:
-                raise SolveError("内部エラー: slot が未割当です。")
+                if not relaxed:
+                    raise SolveError("内部エラー: slot が未割当です。")
+                continue  # 緩和モードでは空きスロットをスキップ
             slots_out[slot_name] = chosen
         assignments.append(Assignment(day=d, slots=slots_out))
 
-    return SolveResult(assignments=tuple(assignments))
-
+    return SolveResult(assignments=tuple(assignments), is_partial=relaxed)
