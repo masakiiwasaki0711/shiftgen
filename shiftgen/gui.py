@@ -355,6 +355,7 @@ class App(tk.Tk):
         path = found if found is not None else (base / "staff_master.json")
         if not path.exists():
             picked = filedialog.askopenfilename(
+                parent=self,
                 title="staff_master.json を選択",
                 initialdir=str(base),
                 filetypes=[("JSON", "*.json")],
@@ -399,7 +400,7 @@ class App(tk.Tk):
             self.status_var.set("スタッフ読込に失敗しました。")
 
     def _load_json(self):
-        path = filedialog.askopenfilename(filetypes=[("JSON", "*.json")])
+        path = filedialog.askopenfilename(parent=self, filetypes=[("JSON", "*.json")])
         if not path:
             return
         with open(path, "r", encoding="utf-8") as f:
@@ -407,7 +408,7 @@ class App(tk.Tk):
         self._load_from_raw(raw)
 
     def _load_template(self):
-        path = filedialog.askopenfilename(filetypes=[("Excel", "*.xlsx")])
+        path = filedialog.askopenfilename(parent=self, filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
         try:
@@ -449,7 +450,7 @@ class App(tk.Tk):
         self.status_var.set("読み込みました。")
 
     def _save_json(self):
-        path = filedialog.asksaveasfilename(defaultextension=".json", filetypes=[("JSON", "*.json")])
+        path = filedialog.asksaveasfilename(parent=self, defaultextension=".json", filetypes=[("JSON", "*.json")])
         if not path:
             return
         raw = {
@@ -467,7 +468,7 @@ class App(tk.Tk):
         self.status_var.set("JSONを保存しました。")
 
     def _save_template(self):
-        path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
+        path = filedialog.asksaveasfilename(parent=self, defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
         try:
@@ -561,7 +562,7 @@ class App(tk.Tk):
         if not self._assignments:
             messagebox.showerror("出力エラー", "先に「生成」を実行してください。")
             return
-        path = filedialog.asksaveasfilename(defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
+        path = filedialog.asksaveasfilename(parent=self, defaultextension=".xlsx", filetypes=[("Excel", "*.xlsx")])
         if not path:
             return
         mi = self._make_month_input()
