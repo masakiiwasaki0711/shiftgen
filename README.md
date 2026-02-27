@@ -40,6 +40,13 @@ pip install -r requirements.txt
 
 **macOS:** `run.command` をダブルクリック
 
+ターミナルから実行する場合:
+```bash
+.venv/bin/python3 app.py
+```
+
+> **注意:** `python3 app.py` を直接実行すると、仮想環境外の Python が使われ `ortools` が見つからないエラーになります。必ず `.venv` 内の Python を使ってください。
+
 **Windows:**
 ```powershell
 .venv\Scripts\python app.py
