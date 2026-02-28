@@ -78,3 +78,11 @@ python -m shiftgen.cli --in requests.xlsx --out out.xlsx
 ## exe化 (Windows配布用)
 
 Python を入れられない共有PCへの配布方法は `BUILD_WINDOWS_EXE.md` を参照してください。
+
+> **注意:** `staff_master.json` は exe に同梱されません。「スタッフ読込」を自動化したい場合は、`staff_master.json` を exe と同じフォルダに配置してください。
+>
+> ```
+> dist/
+>   shiftgen.exe
+>   staff_master.json   ← ここに置く
+> ```
