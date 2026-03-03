@@ -75,6 +75,20 @@ CLIでも使用できます:
 python -m shiftgen.cli --in requests.xlsx --out out.xlsx
 ```
 
+## カスタマイズ
+
+### 勤務時間単価の変更
+
+1日あたりの勤務時間は `shiftgen/excel.py` の先頭にある定数で管理しています。
+
+```python
+# shiftgen/excel.py
+HOURS_WEEKDAY = 8.5   # 平日1回あたりの勤務時間 (h)
+HOURS_SATURDAY = 4.5  # 土曜1回あたりの勤務時間 (h)
+```
+
+この値を変更するだけで、Excel出力の「勤務時間集計」シートとGUIのサマリー表示の両方に反映されます。
+
 ## exe化 (Windows配布用)
 
 Python を入れられない共有PCへの配布方法は `BUILD_WINDOWS_EXE.md` を参照してください。

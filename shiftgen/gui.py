@@ -10,7 +10,7 @@ from tkinter import filedialog, messagebox, ttk
 from .app_paths import app_base_dir, find_runtime_file
 from .calendar_utils import iter_dates, month_range
 from .domain import KIND_SAT_B, KIND_WD_A, MonthInput, Requirements, SLOT_LABEL_JA, SLOT_ORDER, Staff
-from .excel import export_xlsx
+from .excel import compute_hours, export_xlsx
 from .jp_holidays import jp_holidays_in_month
 from .solver import SolveError, solve
 from .template_excel import export_template_xlsx, import_from_template_xlsx
@@ -212,7 +212,14 @@ class App(tk.Tk):
         box.rowconfigure(0, weight=1)
         box.columnconfigure(0, weight=1)
 
+        self.summary_text = tk.Text(
+            box, height=6, state="disabled",
+            font=("Courier New", 9), bg=COL_PANEL, relief="flat",
+        )
+        self.summary_text.grid(row=2, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 6))
+
         self._assignments = None
+        self._month_input = None
 
     def _rebuild_calendar(self):
         for w in self.cal_frame.winfo_children():
@@ -522,6 +529,7 @@ class App(tk.Tk):
             return
 
         self._assignments = res.assignments
+        self._month_input = mi
         self.preview.delete(*self.preview.get_children())
         staff_by_id = mi.staff_by_id()
         for idx, a in enumerate(res.assignments):
@@ -544,6 +552,17 @@ class App(tk.Tk):
         self.preview.tag_configure("even", background="#FFFFFF")
         self.preview.tag_configure("odd", background="#FFFBEB")
         self.preview.tag_configure("sat", background=COL_SAT)
+        # 勤務時間サマリー表示
+        hours_data = compute_hours(mi, res.assignments)
+        header_line = f"{'名前':<10}  {'平日':>3}回×8.5h  {'土曜':>3}回×4.5h  合計"
+        lines = [header_line, "-" * len(header_line)]
+        for _sid, name, _is_mgr, wd, sat, total in hours_data:
+            lines.append(f"{name:<10}  {wd:>3}回       {sat:>3}回      {total:>5.1f}h")
+        self.summary_text.configure(state="normal")
+        self.summary_text.delete("1.0", "end")
+        self.summary_text.insert("end", "\n".join(lines))
+        self.summary_text.configure(state="disabled")
+
         if res.is_partial:
             self.status_var.set(
                 f"生成完了(制約緩和): {len(res.assignments)}日"
